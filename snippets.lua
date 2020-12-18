@@ -1,7 +1,5 @@
 --------------------------------------------------------------------------------
 -- Config
--- menu app? dmenu, vis-menu...
-menuapp = 'dmenu -l 5 '
 snippetfiles = '/home/john/.vim/bundle/vim-snippets/UltiSnips/'
 
 
@@ -22,40 +20,40 @@ local function anythingbut(ch) return (tanyprintable + tcontrol) - lpeg.S(ch) en
 
 local ttabtriggercomplex = quoted (tlowcasedword * lpeg.S'()[]?0123456789-'^1)
 -- TODO This is just retarded
-local ttabtriggerweird   = lpeg.S'!' 
-                         * (lpeg.R'az' + lpeg.S'?()') ^ 1 
+local ttabtriggerweird   = lpeg.S'!'
+                         * (lpeg.R'az' + lpeg.S'?()') ^ 1
                          * lpeg.S'!'
 local ttabtriggerweird2  = lpeg.P'#!'
-local ttabtrigger        = ttabtriggercomplex 
-                         + ttabtriggerweird 
-                         + ttabtriggerweird2 
+local ttabtrigger        = ttabtriggercomplex
+                         + ttabtriggerweird
+                         + ttabtriggerweird2
                          + tlowcasedword
 local tdescription       = quoted (lpeg.Cg( (tanyprintable - lpeg.S'"')^1, 'description'))
 local toption            = lpeg.R'az'
 
-local tstartsnippet = lpeg.P'snippet' 
-                    * tws 
-                    * lpeg.Cg(ttabtrigger, 'tabtrigger') 
-                    * tws 
-                    * tdescription 
-                    * tws ^ 0 
+local tstartsnippet = lpeg.P'snippet'
+                    * tws
+                    * lpeg.Cg(ttabtrigger, 'tabtrigger')
+                    * tws
+                    * tdescription
+                    * tws ^ 0
                     * lpeg.Cg(toption^0, 'options')
 local tendsnippet   = lpeg.P'endsnippet'
 
 -- The content parsing needs cleanup, its really convoluted due to me learning
 -- lpeg while using it
 --tcontent      = ((tanyprintable + tcontrol)^1 - tendsnippet) * tnewline
-local tcontent = ((lpeg.S' \t' + tanyprintable)^1 - tendsnippet) 
+local tcontent = ((lpeg.S' \t' + tanyprintable)^1 - tendsnippet)
                * tnewline
-local tsnippet = tstartsnippet 
-               * tnewline 
+local tsnippet = tstartsnippet
+               * tnewline
                * ((tendsnippet * tnewline) + lpeg.Cg(tcontent ^ 1, 'content'))
 
 local tcomment  = lpeg.S'#'
                 * tanyprintable^0
                 * tnewline
 local tpriority = lpeg.P'priority'
-                * tws 
+                * tws
                 * lpeg.Cg(lpeg.S('-')^0 * tdigit^1, 'priority')
 
 -- TODO doesn't work
@@ -138,10 +136,10 @@ local function create_snippet(line, linesit)
       snippetstr = snippetstr .. line .. '\n'
     end
   end
-  
+
   local p = vis.lpeg.Ct(tsnippet)
   local m = p:match(snippetstr)
-  
+
   local tabtrigger = m.tabtrigger
   local snippet = {}
   snippet.description = m.description
@@ -155,13 +153,13 @@ end
 -- triggered when new file is loaded or when syntax is set/changed
 local function load_snippets(snippetfile)
   snippets = {}
-  
+
   local f = io.open(snippetfile, 'r')
   if f then
     io.input(f)
     local linesit = io.lines()
-    
-    for line in linesit do 
+
+    for line in linesit do
       -- TODO read whole file, then apply lpeg grammar that parses all
       -- snippets out rather than being pedestrian about it like this
       local s, e = string.find(line, 'snippet')
@@ -173,7 +171,7 @@ local function load_snippets(snippetfile)
         snippets[tabtrigger] = snippet
       end
     end
-    
+
     io.close(f)
     return snippets, true
   else
@@ -186,11 +184,11 @@ end
 -- for passing to dmenu (or, very probably, vis-menu)
 local function snippetslist(snippets)
   local list = ''
-  
+
   for k,v in pairs(snippets) do
     list = list .. k .. ' - ' .. v.description .. '\n'
   end
-  
+
   return list
 end
 
@@ -225,11 +223,11 @@ vis:map(vis.modes.INSERT, "<C-x><C-j>", function()
     vis:info('Failed to load a correct snippet: ' .. snippetfile)
     return
   end
-  
+
   local win = vis.win
   local file = win.file
   local pos = win.selection.pos
-  
+
   if not pos then
     return
   end
@@ -237,42 +235,56 @@ vis:map(vis.modes.INSERT, "<C-x><C-j>", function()
 
   -- Use prefix W if exists
   local initial = ' '
-  --local prefix = file:text_object_longword(pos-1)
-  --if prefix ~= nil then
-  --  initial = initial .. file:content(prefix)
-  --end
+  local range = file:text_object_longword(pos > 0 and pos - 1 or pos)
+  if range then
+      initial = initial .. file:content(range)
+  end
 
-
-  local stdout = io.popen("echo '" .. snippetslist(snippets) .. "' | " .. menuapp, "r")
-  --local stdout = io.popen("echo '" .. snippetslist(snippets) .. "' | " .. menuapp .. initial, "r")
+  -- Note, for one reason or another, using vis-menu corrupts my terminal
+  -- (urxvt) for exact amount of lines that vis-menu takes
+  -- dmenu has no such problems, but can't take initial input :-\
+  --local stdout = io.popen("echo '" .. snippetslist(snippets) .. "' | dmenu -l 5", "r")
+  local stdout = io.popen("echo '" .. snippetslist(snippets) .. "' | vis-menu " .. initial, "r")
   local chosen = stdout:lines()()
   local success, msg, status = stdout:close()
-  if success then
-    local trigger = chosen:gmatch('[^ ]+')()
-    local snipcontent = snippets[trigger].content
-    --if prefix ~= nil then
-    --  file:delete(prefix)
-    --end
-    vis:insert(snipcontent.str)
+  if status ~= 0 or not chosen then
+    vis:message(msg)
+    return
+  end
 
-    if #snipcontent.tags > 0 then
-      vis:info("Creating selections. Use 'g>' and 'g<' to navigate between anchors.")
-      vis.mode = vis.modes.VISUAL
+  local trigger = chosen:gmatch('[^ ]+')()
+  local snipcontent = snippets[trigger].content
+  if range then
+    file:delete(range)
+    -- Update position after deleting the range
+    pos = pos - (range.finish - range.start)
+    win:draw() -- Does this do anything???
+  end
 
-      for k,v in ipairs(snipcontent.tags) do
-        vis:command('#' .. pos + v.selstart - 1 ..',#' .. pos + v.selend .. ' p')
-        vis:command('gs') -- Tested, works without this too, but just in case
-      end
+  vis:insert(snipcontent.str)
+  --win.selection.pos = pos
 
-      -- Backtrack through selections
-      for _ in ipairs(snipcontent.tags) do
-        vis:command('g<')
-      end
-    else
-      win.selection.pos = pos + #snipcontent.str
+  if #snipcontent.tags > 0 then
+    vis:info("Creating selections. Use 'g>' and 'g<' to navigate between anchors.")
+    vis.mode = vis.modes.VISUAL
+
+    -- Create selections iteratively using `:#n,#n2 p` command and `gs` to
+    -- save it in the jumplist
+    for k,v in ipairs(snipcontent.tags) do
+      vis:command('#' .. pos + v.selstart - 1 ..',#' .. pos + v.selend .. ' p')
+      vis:feedkeys('gs') -- Tested, works without this too, but just in case
     end
+
+    -- Backtrack through all selections we've made first
+    -- (so that we can use g> to move us forward)...
+    for _ in ipairs(snipcontent.tags) do
+      vis:feedkeys('g<')
+    end
+
+    -- ... then set us on the first selection
+    vis:feedkeys('g>')
   else
-    vis:info(msg)
+    win.selection.pos = pos + #snipcontent.str
   end
 end, "Insert a snippet")
 
