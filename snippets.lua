@@ -106,19 +106,19 @@ local function create_content(str)
     -- We need to keep track of how much we remove, and readjust all
     -- subsequent selection points
     -- Note to self, I hate all this bookkeeping
-    local tagtext = string.sub(str, v.selstart, v.selend)
-    if v.expr ~= nil then
-      content.str = string.gsub(content.str, tagtext, v.expr)
-      local x = #('${'..tostring(k)..':')
-      i = i + x
-      j = j + x + #'}'
-    else
-      content.str = string.gsub(content.str, tagtext, '')
-      i = i + #'$'
-      j = j + #'$' + #tostring(k)
-    end
-    content.tags[k].selstart = content.tags[k].selstart - i
-    content.tags[k].selend   = content.tags[k].selend - j
+    --local tagtext = string.sub(str, v.selstart, v.selend)
+    --if v.expr ~= nil then
+    --  content.str = string.gsub(content.str, tagtext, v.expr)
+    --  local x = #('${'..tostring(k)..':')
+    --  i = i + x
+    --  j = j + x + #'}'
+    --else
+    --  content.str = string.gsub(content.str, tagtext, '')
+    --  i = i + #'$'
+    --  j = j + #'$' + #tostring(k)
+    --end
+    --content.tags[k].selstart = content.tags[k].selstart - i
+    --content.tags[k].selend   = content.tags[k].selend - j
   end
   return content
 end
@@ -257,15 +257,16 @@ vis:map(vis.modes.INSERT, "<C-x><C-j>", function()
 
     if #snipcontent.tags > 0 then
       vis:info("Creating selections. Use 'g>' and 'g<' to navigate between anchors.")
-      --vis.mode = vis.modes.NORMAL
+      vis.mode = vis.modes.VISUAL
 
       for k,v in ipairs(snipcontent.tags) do
-        vis:command('#' .. pos + v.selstart ..', #' .. pos + v.selend .. ' p')
+        vis:command('#' .. pos + v.selstart - 1 ..',#' .. pos + v.selend .. ' p')
         vis:command('gs') -- Tested, works without this too, but just in case
       end
 
       -- Backtrack through selections
       for _ in ipairs(snipcontent.tags) do
+        vis:command('g<')
       end
     else
       win.selection.pos = pos + #snipcontent.str
