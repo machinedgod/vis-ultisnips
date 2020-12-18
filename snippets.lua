@@ -1,84 +1,125 @@
+--------------------------------------------------------------------------------
 -- Config
 -- menu app? dmenu, vis-menu...
 menuapp = 'dmenu -l 5'
 snippetfiles = '/home/john/.vim/bundle/vim-snippets/UltiSnips/'
 
+
+
 --------------------------------------------------------------------------------
+-- lpeg rules
 
-local function quoted(p)
-  return lpeg.S('"') * p * lpeg.S('"')
-end
-
-local tsep               = lpeg.S(' ')
+local tsep               = lpeg.S' '
 local tws                = tsep ^ 1
-local tnewline           = lpeg.S('\n')
-local tlowcasedword      = lpeg.R('az') ^ 1
+local tnewline           = lpeg.S'\n'
+local tlowcasedword      = lpeg.R'az' ^ 1
 local tdigit             = lpeg.locale()['digit']
 local talphanum          = lpeg.locale()['alnum']
 local tanyprintable      = lpeg.locale()['print']
-local ttabtriggercomplex = quoted (tlowcasedword * lpeg.S('()[]?0123456789-')^1)
+local tcontrol           = lpeg.locale()['cntrl']
+local function quoted(p) return lpeg.S('"') * p * lpeg.S('"') end
+local function anythingbut(ch) return (tanyprintable + tcontrol) - lpeg.S(ch) end
+
+local ttabtriggercomplex = quoted (tlowcasedword * lpeg.S'()[]?0123456789-'^1)
 -- TODO This is just retarded
-local ttabtriggerweird   = lpeg.S('!') * (lpeg.R('az') + lpeg.S('?()')) ^ 1 * lpeg.S('!')
-local ttabtriggerweird2  = lpeg.P('#!')
-local ttabtrigger        = ttabtriggercomplex + ttabtriggerweird + ttabtriggerweird2 + tlowcasedword
-local tdescription       = quoted (lpeg.Cg( (tanyprintable - lpeg.S('"'))^1, 'description'))
-local toption            = lpeg.R('az')
+local ttabtriggerweird   = lpeg.S'!' 
+                         * (lpeg.R'az' + lpeg.S'?()') ^ 1 
+                         * lpeg.S'!'
+local ttabtriggerweird2  = lpeg.P'#!'
+local ttabtrigger        = ttabtriggercomplex 
+                         + ttabtriggerweird 
+                         + ttabtriggerweird2 
+                         + tlowcasedword
+local tdescription       = quoted (lpeg.Cg( (tanyprintable - lpeg.S'"')^1, 'description'))
+local toption            = lpeg.R'az'
 
-local tstartsnippet = lpeg.P('snippet') * tws * lpeg.Cg(ttabtrigger, 'tabtrigger') * tws * tdescription * tws ^ 0 * lpeg.Cg(toption^0, 'options')
-local tendsnippet   = lpeg.P('endsnippet')
-local tcontentline  = tanyprintable + lpeg.R(' \t')
-local tcontent      = ((lpeg.S(' \t') + tanyprintable)^1 - tendsnippet) * tnewline
-local tsnippet      = tstartsnippet * tnewline * ((tendsnippet * tnewline) + lpeg.Cg(tcontent ^ 1, 'content'))
+local tstartsnippet = lpeg.P'snippet' 
+                    * tws 
+                    * lpeg.Cg(ttabtrigger, 'tabtrigger') 
+                    * tws 
+                    * tdescription 
+                    * tws ^ 0 
+                    * lpeg.Cg(toption^0, 'options')
+local tendsnippet   = lpeg.P'endsnippet'
 
-local tcomment  = lpeg.S('#') * tanyprintable^0 * tnewline
-local tpriority = lpeg.P('priority') * tws * lpeg.Cg(lpeg.S('-')^0 * tdigit^1, 'priority')
+-- The content parsing needs cleanup, its really convoluted due to me learning
+-- lpeg while using it
+--tcontent      = ((tanyprintable + tcontrol)^1 - tendsnippet) * tnewline
+local tcontent = ((lpeg.S' \t' + tanyprintable)^1 - tendsnippet) 
+               * tnewline
+local tsnippet = tstartsnippet 
+               * tnewline 
+               * ((tendsnippet * tnewline) + lpeg.Cg(tcontent ^ 1, 'content'))
+
+local tcomment  = lpeg.S'#'
+                * tanyprintable^0
+                * tnewline
+local tpriority = lpeg.P'priority'
+                * tws 
+                * lpeg.Cg(lpeg.S('-')^0 * tdigit^1, 'priority')
 
 -- TODO doesn't work
-local tsnippetsfile = ((lpeg.Ct(tsnippet) + tpriority + tcomment + tnewline) - -1) ^ 1
+local tsnippetsfile = (lpeg.Ct(tsnippet) + tpriority + tcomment + tnewline) ^ 1
+
+
+-- TODO does parse values correctly, but parsing out nested tags will
+--      require recursion at the callsite since I have no clue how to do it
+local ttag = { 'T'
+       ; Expr = lpeg.C((lpeg.V'T' + ((tanyprintable + tcontrol) - lpeg.S'}'))^1)
+       , Tnum = lpeg.Cg(tdigit ^ 1, 'tagnum')
+       , Ps   = lpeg.Cg(lpeg.Cp(), 'selstart')
+       , Pe   = lpeg.Cg(lpeg.Cp(), 'selend')
+       , Tc   = lpeg.V'Ps'
+                * lpeg.P'${'
+                * lpeg.V'Tnum'
+                * lpeg.S(':')
+                * lpeg.Cg(lpeg.V'Expr', 'expr')
+                * lpeg.V'Pe'
+                * lpeg.S'}'
+       , Ts   = lpeg.V'Ps' * lpeg.S'$' * lpeg.V'Pe' * lpeg.V'Tnum'
+       , T    = lpeg.V'Tc' + lpeg.V'Ts'
+       }
+
+
 
 --------------------------------------------------------------------------------
+-- Helper functions
 
 -- Parses the snippet's content to create a table we later use
 -- to corrently insert the text, the selections, and the default values
 local function create_content(str)
   local content = {}
-  content.str = str
+  content.str   = str
+  content.tags  = {}
+
+  local p = vis.lpeg.Ct((lpeg.Ct(ttag) + tanyprintable + tcontrol) ^ 1)
+  local m = p:match(str)
+
+  --[[
+  local debugstr = ''
+  for k,v in pairs(m) do
+    debugstr = debugstr .. k .. ','
+  end
   
-  local alltags = str:gmatch('${[^}]+}') -- TODO this is the error, tags without default values have format '$%d+'
-  for tag in alltags do
-    local f = tag:gmatch('[^${}:]+') -- TODO this fails if there's no default value!
-    local sel = {}
-    sel.tagnum = f()
-    sel.tagdefaultval = f()
-    
-    -- Replace this tag with its default value in the 'str'
-    content.str = content.str:gsub(tag, sel.tagdefaultval)
-    
-    local start, end_ = str:find(tag)
-    -- TODO This should NOT happen, but it does, and it needs to be bugfixed
-    if start == nil then
-      start = 0
-    end
-    if end_ == nil then
-      end_ = 0
-    end
-    
-    content[sel.tagnum] = { selstart = start - 1, selend = end_ - (4 + #sel.tagnum) }
-  end
-    --[[
-    -- Either append to selections array in existing tag, or
-    -- create a new tag and add a first entry
-    if content[sel.tagnum] == nil then
-      sel.selections = {}
-      table.insert(sel.selections, { selstart = start - 1, selend = end_ - (4 + #sel.tagnum) }) -- These arithmetics are to account for ${ and }
-      content[sel.tagnum] = sel
-    else
-      local existing = content[sel.tagnum]
-      table.insert(content[sel.tagnum].selections, { selstart = start, selend = end_ })
-    end
-  end
+  vis:info(debugstr)
   --]]
-  
+
+  local tagtext = ''
+  for k,v in pairs(m) do
+    content.tags[k] = v
+    -- TODO recurse over tag.expr to extract nested tags
+    --      Of course this will actually have to be used later on, depending
+    --      on whether the tag is added or not
+
+    -- TODO temporarily disabled string replacement, because for god knows
+    --      what reason, it doesn't work
+    --tagtext = tagtext .. ',' .. string.sub(content.str, v.selstart, v.selend)
+    --if v.expr ~= nil then
+    --  content.str = string.gsub(content.str, tagtext, v.expr)
+    --else
+    --  content.str = string.gsub(content.str, tagtext, '')
+    --end
+  end
   return content
 end
 
@@ -172,6 +213,11 @@ local function mk_vis_selections(pos, tag)
   return vissels
 end
 
+
+
+--------------------------------------------------------------------------------
+-- Plugging it all in
+
 vis:map(vis.modes.INSERT, "<C-x><C-j>", function()
   local snippetfile = snippetfiles .. vis.win.syntax .. '.snippets'
   local snippets, success = load_snippets(snippetfile)
@@ -198,10 +244,12 @@ vis:map(vis.modes.INSERT, "<C-x><C-j>", function()
     file:insert(pos, snipcontent.str)
     --win.selection.pos = pos + #snipcontent.str
 
-    if snipcontent['1'] ~= nil then
+    -- TODO try executing 'gs' commands to save anchorpoints, then backtracking
+    --      issuing 'g<'
+    if #snipcontent.tags > 0 then
       vis.mode = vis.modes.VISUAL
-      win.selection.range = { start  = pos + snipcontent['1'].selstart
-                            , finish = pos + snipcontent['1'].selend 
+      win.selection.range = { start  = pos + snipcontent.tags[1].selstart - 1
+                            , finish = pos + snipcontent.tags[1].selend 
                             }
     else
       win.selection.pos = pos + #snipcontent.str
