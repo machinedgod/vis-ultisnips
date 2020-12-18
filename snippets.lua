@@ -1,7 +1,7 @@
 --------------------------------------------------------------------------------
 -- Config
 -- menu app? dmenu, vis-menu...
-menuapp = 'dmenu -l 5'
+menuapp = 'dmenu -l 5 '
 snippetfiles = '/home/john/.vim/bundle/vim-snippets/UltiSnips/'
 
 
@@ -95,30 +95,30 @@ local function create_content(str)
   local p = vis.lpeg.Ct((lpeg.Ct(ttag) + tanyprintable + tcontrol) ^ 1)
   local m = p:match(str)
 
-  --[[
-  local debugstr = ''
-  for k,v in pairs(m) do
-    debugstr = debugstr .. k .. ','
-  end
-  
-  vis:info(debugstr)
-  --]]
-
-  local tagtext = ''
-  for k,v in pairs(m) do
+  local i = 0
+  local j = 0
+  for k,v in ipairs(m) do
     content.tags[k] = v
     -- TODO recurse over tag.expr to extract nested tags
     --      Of course this will actually have to be used later on, depending
     --      on whether the tag is added or not
 
-    -- TODO temporarily disabled string replacement, because for god knows
-    --      what reason, it doesn't work
-    --tagtext = tagtext .. ',' .. string.sub(content.str, v.selstart, v.selend)
-    --if v.expr ~= nil then
-    --  content.str = string.gsub(content.str, tagtext, v.expr)
-    --else
-    --  content.str = string.gsub(content.str, tagtext, '')
-    --end
+    -- We need to keep track of how much we remove, and readjust all
+    -- subsequent selection points
+    -- Note to self, I hate all this bookkeeping
+    local tagtext = string.sub(str, v.selstart, v.selend)
+    if v.expr ~= nil then
+      content.str = string.gsub(content.str, tagtext, v.expr)
+      local x = #('${'..tostring(k)..':')
+      i = i + x
+      j = j + x + #'}'
+    else
+      content.str = string.gsub(content.str, tagtext, '')
+      i = i + #'$'
+      j = j + #'$' + #tostring(k)
+    end
+    content.tags[k].selstart = content.tags[k].selstart - i
+    content.tags[k].selend   = content.tags[k].selend - j
   end
   return content
 end
@@ -234,30 +234,42 @@ vis:map(vis.modes.INSERT, "<C-x><C-j>", function()
     return
   end
   -- TODO do something clever here
-  
+
+  -- Use prefix W if exists
+  local initial = ' '
+  --local prefix = file:text_object_longword(pos-1)
+  --if prefix ~= nil then
+  --  initial = initial .. file:content(prefix)
+  --end
+
+
   local stdout = io.popen("echo '" .. snippetslist(snippets) .. "' | " .. menuapp, "r")
+  --local stdout = io.popen("echo '" .. snippetslist(snippets) .. "' | " .. menuapp .. initial, "r")
   local chosen = stdout:lines()()
   local success, msg, status = stdout:close()
   if success then
     local trigger = chosen:gmatch('[^ ]+')()
     local snipcontent = snippets[trigger].content
-    file:insert(pos, snipcontent.str)
-    --win.selection.pos = pos + #snipcontent.str
+    --if prefix ~= nil then
+    --  file:delete(prefix)
+    --end
+    vis:insert(snipcontent.str)
 
-    -- TODO try executing 'gs' commands to save anchorpoints, then backtracking
-    --      issuing 'g<'
     if #snipcontent.tags > 0 then
-      vis.mode = vis.modes.VISUAL
-      win.selection.range = { start  = pos + snipcontent.tags[1].selstart - 1
-                            , finish = pos + snipcontent.tags[1].selend 
-                            }
+      vis:info("Creating selections. Use 'g>' and 'g<' to navigate between anchors.")
+      --vis.mode = vis.modes.NORMAL
+
+      for k,v in ipairs(snipcontent.tags) do
+        vis:command('#' .. pos + v.selstart ..', #' .. pos + v.selend .. ' p')
+        vis:command('gs') -- Tested, works without this too, but just in case
+      end
+
+      -- Backtrack through selections
+      for _ in ipairs(snipcontent.tags) do
+      end
     else
       win.selection.pos = pos + #snipcontent.str
     end
-    
-    -- TODO multiple selections and selection switching (using marks, or jumplist?)
-    --win.selection.range = allselections[1].range
-    --win.selections = mk_vis_selections(pos, snipcontent["1"])
   else
     vis:info(msg)
   end
