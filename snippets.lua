@@ -1,25 +1,59 @@
 -- Config
 -- menu app? dmenu, vis-menu...
 menuapp = 'dmenu -l 5'
-snippetfiles = "/home/john/.vim/bundle/vim-snippets/UltiSnips/"
+snippetfiles = '/home/john/.vim/bundle/vim-snippets/UltiSnips/'
 
+--------------------------------------------------------------------------------
+
+local function quoted(p)
+  return lpeg.S('"') * p * lpeg.S('"')
+end
+
+local tsep               = lpeg.S(' ')
+local tws                = tsep ^ 1
+local tnewline           = lpeg.S('\n')
+local tlowcasedword      = lpeg.R('az') ^ 1
+local tdigit             = lpeg.locale()['digit']
+local talphanum          = lpeg.locale()['alnum']
+local tanyprintable      = lpeg.locale()['print']
+local ttabtriggercomplex = quoted (tlowcasedword * lpeg.S('()[]?0123456789-')^1)
+-- TODO This is just retarded
+local ttabtriggerweird   = lpeg.S('!') * (lpeg.R('az') + lpeg.S('?()')) ^ 1 * lpeg.S('!')
+local ttabtriggerweird2  = lpeg.P('#!')
+local ttabtrigger        = ttabtriggercomplex + ttabtriggerweird + ttabtriggerweird2 + tlowcasedword
+local tdescription       = quoted (lpeg.Cg( (tanyprintable - lpeg.S('"'))^1, 'description'))
+local toption            = lpeg.R('az')
+
+local tstartsnippet = lpeg.P('snippet') * tws * lpeg.Cg(ttabtrigger, 'tabtrigger') * tws * tdescription * tws ^ 0 * lpeg.Cg(toption^0, 'options')
+local tendsnippet   = lpeg.P('endsnippet')
+local tcontentline  = tanyprintable + lpeg.R(' \t')
+local tcontent      = ((lpeg.S(' \t') + tanyprintable)^1 - tendsnippet) * tnewline
+local tsnippet      = tstartsnippet * tnewline * ((tendsnippet * tnewline) + lpeg.Cg(tcontent ^ 1, 'content'))
+
+local tcomment  = lpeg.S('#') * tanyprintable^0 * tnewline
+local tpriority = lpeg.P('priority') * tws * lpeg.Cg(lpeg.S('-')^0 * tdigit^1, 'priority')
+
+-- TODO doesn't work
+local tsnippetsfile = ((lpeg.Ct(tsnippet) + tpriority + tcomment + tnewline) - -1) ^ 1
+
+--------------------------------------------------------------------------------
 
 -- Parses the snippet's content to create a table we later use
 -- to corrently insert the text, the selections, and the default values
-function create_content(str)
+local function create_content(str)
   local content = {}
-  content.str = str -- TODO replace tags with default values
-
+  content.str = str
+  
   local alltags = str:gmatch('${[^}]+}') -- TODO this is the error, tags without default values have format '$%d+'
   for tag in alltags do
     local f = tag:gmatch('[^${}:]+') -- TODO this fails if there's no default value!
     local sel = {}
     sel.tagnum = f()
     sel.tagdefaultval = f()
-
+    
     -- Replace this tag with its default value in the 'str'
     content.str = content.str:gsub(tag, sel.tagdefaultval)
-
+    
     local start, end_ = str:find(tag)
     -- TODO This should NOT happen, but it does, and it needs to be bugfixed
     if start == nil then
@@ -28,7 +62,10 @@ function create_content(str)
     if end_ == nil then
       end_ = 0
     end
-
+    
+    content[sel.tagnum] = { selstart = start - 1, selend = end_ - (4 + #sel.tagnum) }
+  end
+    --[[
     -- Either append to selections array in existing tag, or
     -- create a new tag and add a first entry
     if content[sel.tagnum] == nil then
@@ -40,71 +77,65 @@ function create_content(str)
       table.insert(content[sel.tagnum].selections, { selstart = start, selend = end_ })
     end
   end
-
+  --]]
+  
   return content
 end
 
 
 -- Takes a line starting with 'snippet' and a lines iterator, and creates
 -- a 'snippet' table to be used
-function create_snippet(line, linesit)
-  -- Process initial line
-  -- Grab the description first
-  local tokens = string.gmatch(line, '[^\"]+')
-  tokens() -- Lose the part before opening quotes
-  local description = tokens() -- Grab the part inside
-  
-  -- Now grab the tabtrigger
-  local tokens = string.gmatch(line, '[^ ]+')
-  tokens() -- Ignore 'snippet' part
-  local tabtrigger = tokens()
-  
-  -- We"ll parse options and stuff sometime later
-  local options = {} -- TODO read options!
-  local contentstr = ""
-  
+local function create_snippet(line, linesit)
+  local snippetstr = line .. '\n'
   -- Read content into list of lines until we hit `endsnippet`
   for line in linesit do
-    local s,e = string.find(line, "endsnippet")
+    local s,e = string.find(line, 'endsnippet')
     if s == 1 then
+      snippetstr = snippetstr .. 'endsnippet' .. '\n'
       break
     else
-      contentstr = contentstr .. line .. "\n"
+      snippetstr = snippetstr .. line .. '\n'
     end
   end
-
-  snippet = {}
-  snippet.description = description
-  snippet.options = options
-  snippet.content = create_content(contentstr)
+  
+  local p = vis.lpeg.Ct(tsnippet)
+  local m = p:match(snippetstr)
+  
+  local tabtrigger = m.tabtrigger
+  local snippet = {}
+  snippet.description = m.description
+  snippet.options = m.options
+  snippet.content = create_content(m.content)
   return tabtrigger, snippet
 end
 
 
 -- Loads all snippets from passed '.snippets' file. Should probably be
 -- triggered when new file is loaded or when syntax is set/changed
-function load_snippets(snippetfile)
+local function load_snippets(snippetfile)
   snippets = {}
-
-  local f = io.open(snippetfile, "r")
+  
+  local f = io.open(snippetfile, 'r')
   if f then
     io.input(f)
     local linesit = io.lines()
     
     for line in linesit do 
-      local s, e = string.find(line, "snippet")
+      -- TODO read whole file, then apply lpeg grammar that parses all
+      -- snippets out rather than being pedestrian about it like this
+      local s, e = string.find(line, 'snippet')
       -- Find lines that start with 'snippet' and enter
       -- snippet reading loop
       if s == 1 then
+        local snippettext
         local tabtrigger, snippet = create_snippet(line, linesit)
         snippets[tabtrigger] = snippet
       end
-    
     end
+    
     io.close(f)
     return snippets, true
   else
-    vis:info("Failed to load a correct snippet: " .. snippetfile)
     return snippets, false
   end
 end
@@ -112,19 +143,19 @@ end
 
 -- Takes list of snippets and concatenates them into the string suitable
 -- for passing to dmenu (or, very probably, vis-menu)
-function snippetslist(snippets)
-  local list = ""
-
+local function snippetslist(snippets)
+  local list = ''
+  
   for k,v in pairs(snippets) do
     list = list .. k .. ' - ' .. v.description .. '\n'
   end
-
+  
   return list
 end
 
 -- Creates an array of vis Selection instances to be passed to
 -- win.selections
-function mk_vis_selections(pos, tag)
+local function mk_vis_selections(pos, tag)
   vissels = {}
   for k,v in pairs(tag.selections) do
     local sel = { range    = { start  = pos + v.selstart
@@ -142,37 +173,17 @@ function mk_vis_selections(pos, tag)
 end
 
 vis:map(vis.modes.INSERT, "<C-x><C-j>", function()
-  --local snippetfile = snippetfiles .. "html" .. ".snippets"
-  --vis.win.syntax = "java"
-  local snippetfile = snippetfiles .. vis.win.syntax .. ".snippets"
+  local snippetfile = snippetfiles .. vis.win.syntax .. '.snippets'
   local snippets, success = load_snippets(snippetfile)
   if not success then
-    return 
+    vis:info('Failed to load a correct snippet: ' .. snippetfile)
+    return
   end
-
-  -- print all snippets we loaded and their names
-  --[[
-  for k, v in pairs(snippets) do
-    local out = '[' .. k .. '] --> "' .. tostring(v.content) .. '"\n'
-    vis.win.file:insert(vis.win.selection.pos, out)
-    vis.win.selection.pos = vis.win.selection.pos + #out
-
-    for k2, v2 in pairs(v.content) do
-      if k2 == 'str' then
-      else
-        local no = '\t' .. k2 .. ' -> tagnum: ' .. v2.tagnum .. ', defaultval: ' .. v2.defaultval .. ', selstart: ' .. v2.selstart .. ', selend: ' .. v2.selend .. '\n'
-
-        vis.win.file:insert(vis.win.selection.pos, no)
-        vis.win.selection.pos = vis.win.selection.pos + #no
-      end
-    end
-  end
-  --]]
-
+  
   local win = vis.win
   local file = win.file
   local pos = win.selection.pos
-
+  
   if not pos then
     return
   end
@@ -185,14 +196,22 @@ vis:map(vis.modes.INSERT, "<C-x><C-j>", function()
     local trigger = chosen:gmatch('[^ ]+')()
     local snipcontent = snippets[trigger].content
     file:insert(pos, snipcontent.str)
-    vis.mode = vis.modes.VISUAL
-    local allselections = mk_vis_selections(pos, snipcontent["1"])
-    win.selection.range = allselections[1].range
-    --win.selections = mk_vis_selections(pos, snipcontent["1"])
+    --win.selection.pos = pos + #snipcontent.str
+
+    if snipcontent['1'] ~= nil then
+      vis.mode = vis.modes.VISUAL
+      win.selection.range = { start  = pos + snipcontent['1'].selstart
+                            , finish = pos + snipcontent['1'].selend 
+                            }
+    else
+      win.selection.pos = pos + #snipcontent.str
+    end
+    
     -- TODO multiple selections and selection switching (using marks, or jumplist?)
+    --win.selection.range = allselections[1].range
+    --win.selections = mk_vis_selections(pos, snipcontent["1"])
   else
     vis:info(msg)
   end
-  
 end, "Insert a snippet")
 
