@@ -93,8 +93,7 @@ local function create_content(str)
   local p = vis.lpeg.Ct((lpeg.Ct(ttag) + tanyprintable + tcontrol) ^ 1)
   local m = p:match(str)
 
-  local i = 0
-  local j = 0
+  local s = 1 -- We start from 1 to adjust position from $^0 to ^$0
   for k,v in ipairs(m) do
     content.tags[k] = v
     -- TODO recurse over tag.expr to extract nested tags
@@ -104,20 +103,20 @@ local function create_content(str)
     -- We need to keep track of how much we remove, and readjust all
     -- subsequent selection points
     -- Note to self, I hate all this bookkeeping
-    --local tagtext = string.sub(str, v.selstart, v.selend)
-    --if v.expr ~= nil then
-    --  content.str = string.gsub(content.str, tagtext, v.expr)
-    --  local x = #('${'..tostring(k)..':')
-    --  i = i + x
-    --  j = j + x + #'}'
-    --else
-    --  content.str = string.gsub(content.str, tagtext, '')
-    --  i = i + #'$'
-    --  j = j + #'$' + #tostring(k)
-    --end
-    --content.tags[k].selstart = content.tags[k].selstart - i
-    --content.tags[k].selend   = content.tags[k].selend - j
+    local tagtext = string.sub(str, v.selstart, v.selend)
+    if v.expr ~= nil then
+      content.str = string.gsub(content.str, tagtext, v.expr)
+      content.tags[k].selstart = content.tags[k].selstart - s
+      content.tags[k].selend   = content.tags[k].selstart + #v.expr
+      s = s + #'${' + #tostring(k) + #':' + 1
+    else
+      content.str = string.gsub(content.str, tagtext, '')
+      content.tags[k].selstart = content.tags[k].selstart - s
+      content.tags[k].selend   = content.tags[k].selstart
+      s = s + #'$' + 1
+    end
   end
+
   return content
 end
 
@@ -265,13 +264,13 @@ vis:map(vis.modes.INSERT, "<C-x><C-j>", function()
   --win.selection.pos = pos
 
   if #snipcontent.tags > 0 then
-    vis:info("Creating selections. Use 'g>' and 'g<' to navigate between anchors.")
+    vis:info("Use 'g>' and 'g<' to navigate between anchors.")
     vis.mode = vis.modes.VISUAL
 
     -- Create selections iteratively using `:#n,#n2 p` command and `gs` to
     -- save it in the jumplist
     for k,v in ipairs(snipcontent.tags) do
-      vis:command('#' .. pos + v.selstart - 1 ..',#' .. pos + v.selend .. ' p')
+      vis:command('#' .. pos + v.selstart ..',#' .. pos + v.selend .. ' p')
       vis:feedkeys('gs') -- Tested, works without this too, but just in case
     end
 
