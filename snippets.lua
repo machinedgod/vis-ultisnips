@@ -7,7 +7,7 @@ snippetfiles = '/home/john/.vim/bundle/vim-snippets/UltiSnips/'
 --------------------------------------------------------------------------------
 -- lpeg rules
 
-local tsep               = lpeg.S' '
+local tsep               = lpeg.S' \t'
 local tws                = tsep ^ 1
 local tnewline           = lpeg.S'\n'
 local tlowcasedword      = lpeg.R'az' ^ 1
@@ -15,20 +15,30 @@ local tdigit             = lpeg.locale()['digit']
 local talphanum          = lpeg.locale()['alnum']
 local tanyprintable      = lpeg.locale()['print']
 local tcontrol           = lpeg.locale()['cntrl']
-local function quoted(p) return lpeg.S('"') * p * lpeg.S('"') end
+local function surrounded(ch, p) return lpeg.S(ch) * p * lpeg.S(ch) end
 local function anythingbut(ch) return (tanyprintable + tcontrol) - lpeg.S(ch) end
 
-local ttabtriggercomplex = quoted (tlowcasedword * lpeg.S'()[]?0123456789-'^1)
+local ttabtriggercomplex = surrounded ('"', 
+                              tlowcasedword * lpeg.S'()[]?0123456789-'^1
+                           )
 -- TODO This is just retarded
-local ttabtriggerweird   = lpeg.S'!'
-                         * (lpeg.R'az' + lpeg.S'?()') ^ 1
-                         * lpeg.S'!'
+--      Check the actual grammar and see what special starting chars are
+--      then relax the grammar a bit
+local ttabtriggerweird   = surrounded('!',
+                             (lpeg.R'az' + lpeg.S'?()') ^ 1
+                           )
 local ttabtriggerweird2  = lpeg.P'#!'
+local ttabtriggerweird3  = surrounded('/',
+                             (anythingbut'/') ^1
+                           )
 local ttabtrigger        = ttabtriggercomplex
                          + ttabtriggerweird
                          + ttabtriggerweird2
-                         + tlowcasedword
-local tdescription       = quoted (lpeg.Cg( (tanyprintable - lpeg.S'"')^1, 'description'))
+                         + ttabtriggerweird3
+                         + (tlowcasedword + lpeg.S'.')
+local tdescription       = surrounded ('"',
+                              lpeg.Cg( (tanyprintable - lpeg.S'"')^1, 'description')
+                           )
 local toption            = lpeg.R'az'
 
 local tstartsnippet = lpeg.P'snippet'
@@ -123,6 +133,8 @@ end
 
 -- Takes a line starting with 'snippet' and a lines iterator, and creates
 -- a 'snippet' table to be used
+-- If it fails it returns nil, otherwise returns two values, a tabtrigger
+-- and a snippet
 local function create_snippet(line, linesit)
   local snippetstr = line .. '\n'
   -- Read content into list of lines until we hit `endsnippet`
@@ -139,12 +151,19 @@ local function create_snippet(line, linesit)
   local p = vis.lpeg.Ct(tsnippet)
   local m = p:match(snippetstr)
 
-  local tabtrigger = m.tabtrigger
-  local snippet = {}
-  snippet.description = m.description
-  snippet.options = m.options
-  snippet.content = create_content(m.content)
-  return tabtrigger, snippet
+  if not m then
+    -- Enable this when debugging, otherwise it nukes whole app
+    vis:info('Failed to parse some snippets!')
+    -- vis:message('Failed to parse snippet: ' .. snippetstr)
+    return nil
+  else
+    local tabtrigger = m.tabtrigger
+    local snippet = {}
+    snippet.description = m.description
+    snippet.options = m.options
+    snippet.content = create_content(m.content)
+    return tabtrigger, snippet
+  end
 end
 
 
@@ -167,7 +186,9 @@ local function load_snippets(snippetfile)
       if s == 1 then
         local snippettext
         local tabtrigger, snippet = create_snippet(line, linesit)
-        snippets[tabtrigger] = snippet
+        if tabtrigger then
+          snippets[tabtrigger] = snippet
+        end
       end
     end
 
