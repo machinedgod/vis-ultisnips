@@ -278,7 +278,7 @@ vis:map(vis.modes.INSERT, "<C-x><C-j>", function()
     file:delete(range)
     -- Update position after deleting the range
     pos = pos - (range.finish - range.start)
-    win:draw() -- Does this do anything???
+    vis:redraw()
   end
 
   vis:insert(snipcontent.str)
