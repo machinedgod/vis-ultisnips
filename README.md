@@ -9,6 +9,7 @@ mature enough, and had plenty of templates available.
 ## How to make it work
 
 ### Configuration
+# OUT OF DATE NEEDS FIXING
 1. copy `snippets.lua` into your `.config/vis/plugins` directory
 
 2. (optional) if you don't already have snippets, get them. You can
