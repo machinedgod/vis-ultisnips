@@ -8,16 +8,41 @@ mature enough, and had plenty of templates available.
 
 ## How to make it work
 
-### Configuration
-# OUT OF DATE NEEDS FIXING
-1. copy `snippets.lua` into your `.config/vis/plugins` directory
+### Setup
+1. clone `vis-ultisnips` into your `.config/vis/plugins` directory
 
 2. (optional) if you don't already have snippets, get them. You can
-clone https://github.com/honza/vim-snippets
+clone https://github.com/honza/vim-snippets to get a large repository
+of both SnipMate and UltiSnips
 
-3. in `snippets.lua` modify the `snippetfiles` value so that it points
-to the absolute path where you keep your UltiSnip snippets. Trailing
-slash is necessary
+### Configuration
+1. in your `visrc.lua`:
+```
+local snips     = require('plugins/vis-ultisnips')
+snips.snipmate  = '<path-to-SnipMate-snippets>'
+snips.ultisnips = '<path-to-SnipMate-UltiSnips>'
+```
+Trailing slash is *necessary*!
+
+If you're using `vis-plug`, follow their guide on how to config modules:
+```
+-- configure plugins in an array of tables with git urls and options 
+local plugins = {
+...
+  { url = 'git@github.com:machinedgod/vis-ultisnips', alias = 'snips' },
+...
+}
+
+-- require and optionally install plugins on init
+visplug.init(plugins, true)
+
+-- access plugins via alias
+visplug.plugins.snips.snipmate  = '/home/john/.config/vis/vim-snippets/snippets/'
+visplug.plugins.snips.ultisnips = '/home/john/.config/vis/vim-snippets/UltiSnips/'
+
+```
+Note that despite the example telling different - you have to execute
+`visplug.init(plugins, true)` before you can access plugin configuration.
 
 ### Usage
 In insert mode, hit `<C-j>` to show `vis-menu` with all snippets found

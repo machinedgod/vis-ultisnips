@@ -10,7 +10,7 @@ local UltiSnips = require('plugins/vis-ultisnips/ultisnips-parser')
 --------------------------------------------------------------------------------
 -- Config
 
-M.snippets  = ''
+M.snipmate  = ''
 M.ultisnips = ''
 
 
@@ -68,7 +68,7 @@ local function load_ultisnips()
 end
 
 local function load_snipmate()
-  local snippetfile = M.snippets .. vis.win.syntax .. '.snippets'
+  local snippetfile = M.snipmate .. vis.win.syntax .. '.snippets'
   local snippets, success = SnipMate.load_snippets(snippetfile)
   if not success then
     vis:info('Failed to load a correct SnipMate: ' .. snippetfile)
