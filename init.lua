@@ -2,8 +2,9 @@
 -- Modules
 
 local M = {}
-local SnipMate = require('plugins/vis-ultisnips/snipmate-parser')
-local UltiSnips = require('plugins/vis-ultisnips/ultisnips-parser')
+local cwd = ...
+local SnipMate  = require(cwd .. '.snipmate-parser')
+local UltiSnips = require(cwd .. '.ultisnips-parser')
 
 
 
@@ -34,29 +35,7 @@ local function snippetslist(snippets)
   return list
 end
 
--- Creates an array of vis Selection instances to be passed to
--- win.selections
-local function mk_vis_selections(pos, tag)
-  vissels = {}
-  for k,v in pairs(tag.selections) do
-    local sel = { range    = { start  = pos + v.selstart
-                             , finish = pos + v.selend
-                             }
-                , anchored = false
-                , number   = #vissels + 1
-                , pos      = 0
-                , col      = 0
-                , line     = 0
-                }
-    table.insert(vissels, sel)
-  end
-  return vissels
-end
 
-
-
---------------------------------------------------------------------------------
--- Plugging it all in
 
 local function load_ultisnips()
   local snippetfile = M.ultisnips .. vis.win.syntax .. '.snippets'
@@ -67,6 +46,8 @@ local function load_ultisnips()
   return snippets, success
 end
 
+
+
 local function load_snipmate()
   local snippetfile = M.snipmate .. vis.win.syntax .. '.snippets'
   local snippets, success = SnipMate.load_snippets(snippetfile)
@@ -76,6 +57,8 @@ local function load_snipmate()
   return snippets, success
 end
 
+
+
 -- Second will append to first using suffix for distinguishing
 local function merge_and_override(snips1, snips2, suffix)
   for k,v in pairs(snips2) do
@@ -83,6 +66,11 @@ local function merge_and_override(snips1, snips2, suffix)
   end
   return snips1
 end
+
+
+
+--------------------------------------------------------------------------------
+-- Plugging it all in
 
 vis:map(vis.modes.INSERT, "<C-x><C-j>", function()
   local snippets = merge_and_override(load_snipmate(), load_ultisnips(), '_us')
@@ -125,17 +113,19 @@ vis:map(vis.modes.INSERT, "<C-x><C-j>", function()
   end
 
   vis:insert(snipcontent.str)
-  --win.selection.pos = pos
+
 
   if #snipcontent.tags > 0 then
     vis:info("Use 'g>' and 'g<' to navigate between anchors.")
-    vis.mode = vis.modes.VISUAL
 
     -- Create selections iteratively using `:#n,#n2 p` command and `gs` to
     -- save it in the jumplist
     for k,v in ipairs(snipcontent.tags) do
+      -- Can't use 'x' command because it'd select stuff across
+      -- whole file
       vis:command('#' .. pos + v.selstart ..',#' .. pos + v.selend .. ' p')
---      vis:feedkeys('gs') -- Tested, works without this too, but just in case
+      --vis:feedkeys('gs') -- Tested, works without this too, but just in case
+      --vis:message('Command: ' .. cmd)
     end
 
     -- Backtrack through all selections we've made first
