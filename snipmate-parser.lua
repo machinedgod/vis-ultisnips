@@ -5,6 +5,20 @@ local M = {}
 
 local lpeg = require('lpeg')
 
+--local logfile = io.open('snipmate-parser.log', 'w')
+local logfile = nil
+
+local function log(entry)
+  if logfile then
+    logfile:write(entry .. '\n')
+  end
+end
+
+local function log_close()
+  if logfile then
+    logfile:close()
+  end
+end
 
 
 --------------------------------------------------------------------------------
@@ -81,6 +95,7 @@ local function extract_tags(tableau)
                     , default  = v['default-value']
                     , order    = v['tag-order']
                     }
+      log('tag ' .. tostring(tags[k-2].order) .. ': ' .. tostring(tags[k-2].selstart) .. '/' .. tostring(tags[k-2].selend))
 --      vis:message('snippet ' .. tableau.tabtrigger .. ' tag ' .. tostring(tags[k-1].order) .. ' has start/end: ' .. tostring(tags[k-1].selstart) .. '/' .. tostring(tags[k-1].selend))
     end
   end
@@ -88,7 +103,10 @@ local function extract_tags(tableau)
 end
 
 M.load_snippets = function(snippetfile)
+  log('*** start ***')
+
   snippets = {}
+  flag = false
 
   local f = io.open(snippetfile, 'r')
   if f then
@@ -113,10 +131,14 @@ M.load_snippets = function(snippetfile)
     end
 
     f:close()
-    return snippets, true
+    flag = true
   else
-    return snippets, false
+    flag = false
   end
+
+  log('*** end ***')
+  log_close()
+  return snippets, flag
 end
 
 --------------------------------------------------------------------------------
