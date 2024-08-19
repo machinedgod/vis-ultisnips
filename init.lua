@@ -87,8 +87,10 @@ vis:map(vis.modes.INSERT, "<C-x><C-j>", function()
   -- Use prefix W if exists
   local initial = ' '
   local range = file:text_object_longword(pos > 0 and pos - 1 or pos)
-  if range then
-      initial = initial .. file:content(range)
+  if file:content(range):match('[%w]+') then
+    initial = initial .. file:content(range)
+  else
+    range = nil
   end
 
   -- Note, for one reason or another, using vis-menu corrupts my terminal
@@ -109,10 +111,10 @@ vis:map(vis.modes.INSERT, "<C-x><C-j>", function()
     file:delete(range)
     -- Update position after deleting the range
     pos = pos - (range.finish - range.start)
-    vis:redraw()
   end
 
   vis:insert(snipcontent.str)
+  vis:redraw()
 
 
   if #snipcontent.tags > 0 then
