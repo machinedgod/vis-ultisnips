@@ -99,6 +99,11 @@ local function merge_and_override(snips1, snips2, suffix)
 end
 
 
+local function create_tag_selection(pos, contentlength, tagindex)
+  local address = '#' .. pos .. ',#' .. pos + contentlength
+  vis:command(address .. ' x/\\$\\{' .. tagindex .. '[^}]*\\}/')
+end
+
 
 --------------------------------------------------------------------------------
 -- Plugging it all in
@@ -156,28 +161,38 @@ vis:map(vis.modes.INSERT, '<C-x><C-j>', function()
   vis:insert(snipcontent.str)
   vis:redraw()
 
+  -- Lets not recalculate this in the loop, god knows if underlying engine
+  -- is cacheing it
+  local snipcontentlen = snipcontent.str:len()
 
   if #snipcontent.tags > 0 then
     vis:info("Use 'g>' and 'g<' to navigate between anchors.")
 
-    -- Create selections iteratively using `:#n,#n2 p` command and `gs` to
-    -- save it in the jumplist
-    for k,v in ipairs(snipcontent.tags) do
+    -- Create selections iteratively
+    -- Because tag 0 seems to be main tag in snippets, we want to leave
+    -- it last, therefore we start from 1 and count to tags - 1, then
+    -- later manually add 0th tag
+    for i = 1, #snipcontent.tags - 1, 1 do
       -- Can't use 'x' command because it'd select stuff across
       -- whole file
-      vis:command('#' .. pos + v.selstart ..',#' .. pos + v.selend .. ' p')
-      --vis:feedkeys('gs') -- Tested, works without this too, but just in case
-      --vis:message('Command: ' .. cmd)
+      --vis:command('#' .. pos + v.selstart ..',#' .. pos + v.selend .. ' p')
+      
+      -- Tue Aug 20 04:13:47 PM MDT 2024
+      -- Yes, but if I limit the 'x' only within the inserted snippet
+      -- scope, it'd work?
+      -- After trying: yep, it works
+      create_tag_selection(pos, snipcontentlen, i)
     end
+
+    -- Manually add zero here without meddling with the loop up there
+    create_tag_selection(pos, snipcontentlen, 0)
 
     -- Backtrack through all selections we've made first
     -- (so that we can use g> to move us forward)...
-    for _ in ipairs(snipcontent.tags) do
+    for i = 1, #snipcontent.tags - 1, 1 do
       vis:feedkeys('g<')
     end
-
-    -- ... then set us on the first selection
-    vis:feedkeys('g>')
+      
   else
     win.selection.pos = pos + #snipcontent.str
   end

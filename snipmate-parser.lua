@@ -23,8 +23,15 @@ local ttag               = lpeg.Cg(lpeg.Cp(), 'selstart')
                            * lpeg.P'${'
                            * lpeg.Cg(tdigit^1, 'tag-order') 
                            * (
-                               (lpeg.S':' * lpeg.Cg(talphanum^1, 'default-value') * lpeg.S'}')
-                               + lpeg.S'}'
+                               lpeg.S'}'
+                               + ( lpeg.S':'
+                                 -- Match either reference (since that's
+                                 -- what \$[0-9] are) or default value
+                                 * ( lpeg.Cg(lpeg.S'$' * tdigit, 'reference-value')
+                                   + lpeg.Cg(talphanum^1, 'default-value') 
+                                   )
+                                 * lpeg.S'}'
+                                 )
                              )
                            * lpeg.Cg(lpeg.Cp(), 'selend')
 local tsnippetdecl       = lpeg.P'snippet' * lpeg.S' ' * lpeg.Cg(ttabtrigger, 'tabtrigger') * tnewline
@@ -67,19 +74,27 @@ end
 -- defined starting with index '3'
 -- Index '2' is start of the content
 -- Structure:
--- { tag-order: int
--- , selstart: int
+-- { selstart: int
 -- , selend: int
 -- , default-value: str
+-- , reference-value: int
+-- , order: int
 -- }
 local function extract_tags(tableau)
   local tags = {}
   for k,v in ipairs(tableau) do
     if k >= 3 then -- Only process starting with ix 2
-      tags[k - 2] = { selstart = v.selstart - tableau[2] - 1
-                    , selend   = v.selend   - tableau[2] - 1
-                    , default  = v['default-value']
-                    , order    = v['tag-order']
+      -- TODO Figured out what's the bug here!!!!
+      --      The error of selection increases with newlines; each newline
+      --      increases it forth. I don't know if this is LPEG error
+      --      or vis selection creation error?
+      local bias = 1
+      
+      tags[k - 2] = { selstart  = v.selstart - tableau[2] - bias
+                    , selend    = v.selend   - tableau[2] - bias
+                    , default   = v['default-value']
+                    , reference = v['reference-value']
+                    , order     = v['tag-order']
                     }
 --      vis:message('snippet ' .. tableau.tabtrigger .. ' tag ' .. tostring(tags[k-1].order) .. ' has start/end: ' .. tostring(tags[k-1].selstart) .. '/' .. tostring(tags[k-1].selend))
     end
