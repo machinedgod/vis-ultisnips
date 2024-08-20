@@ -16,7 +16,8 @@ clone https://github.com/honza/vim-snippets to get a large repository
 of both SnipMate and UltiSnips
 
 ### Configuration
-1. in your `visrc.lua`:
+#### Enabling the plugin
+In your `visrc.lua`:
 ```
 local snips     = require('plugins/vis-ultisnips')
 snips.snipmate  = '<path-to-SnipMate-snippets>'
@@ -41,8 +42,33 @@ visplug.plugins.snips.snipmate  = '/home/john/.config/vis/vim-snippets/snippets/
 visplug.plugins.snips.ultisnips = '/home/john/.config/vis/vim-snippets/UltiSnips/'
 
 ```
-Note that despite the example telling different - you have to execute
-`visplug.init(plugins, true)` before you can access plugin configuration.
+Note that despite the example telling different - you have to
+execute `visplug.init(plugins, true)` (or `false` if you want to run
+`:plug-install` manually) before you can access plugin configuration.
+
+#### Setting up syntaxfile → snippetfile mappings that don't match
+Setup any lexer syntax file to snippet file mapping using two tables,
+one for each snippet format. The key is the vis lexer (the thing you
+type when you set syntax with `:set syntax syntaxfile`), while the value
+is the string representing the filename of the snippetfile, without
+syntax. The default mapping includes `cpp.lua` lexer to SnipMate's
+`c.snippets` file as below.
+
+If you report it as an issue (or even more lovely, as a pull request)
+- I'll add it to default maps, but to quickly get it to work without
+messing with the `init.lua` file, add the mappings in your `visrc.lua`
+(purescript is just an example!):
+```
+snips.syntaxfilemaps =
+  { snipmate  = { cpp        = "c"
+                , purescript = "pure"
+                }
+  , ultisnips = { purescript = "pure"
+				}
+  }
+
+```
+
 
 ### Usage
 In insert mode, hit `<C-j>` to show `vis-menu` with all snippets found

@@ -11,8 +11,13 @@ local UltiSnips = require(cwd .. '.ultisnips-parser')
 --------------------------------------------------------------------------------
 -- Config
 
-M.snipmate  = ''
-M.ultisnips = ''
+M.snipmate       = ''
+M.ultisnips      = ''
+M.syntaxfilemaps =
+  { snipmate  = { cpp = "c"
+                }
+  , ultisnips = {}
+  }
 
 
 
@@ -38,10 +43,15 @@ end
 
 
 local function load_ultisnips()
-  local snippetfile = M.ultisnips .. vis.win.syntax .. '.snippets'
+  local snippetFilename = vis.win.syntax
+  if M.syntaxfilemaps.ultisnips[snippetFilename] ~= nil then
+    snippetFilename = M.syntaxfilemaps.ultisnips[snippetFilename]
+  end
+
+  local snippetfile = M.ultisnips .. snippetFilename .. '.snippets'
   local snippets, success = UltiSnips.load_snippets(snippetfile)
   if not success then
-    vis:info('Failed to load a correct UltiSnip: ' .. snippetfile)
+    vis:message('Failed to load a correct UltiSnip: ' .. snippetfile)
   end
   return snippets, success
 end
@@ -49,10 +59,31 @@ end
 
 
 local function load_snipmate()
-  local snippetfile = M.snipmate .. vis.win.syntax .. '.snippets'
+  local snippetFilename = vis.win.syntax
+  if M.syntaxfilemaps.snipmate[snippetFilename] ~= nil then
+    snippetFilename = M.syntaxfilemaps.snipmate[snippetFilename]
+  end
+
+  local snippetfile = M.snipmate .. snippetFilename .. '.snippets'
   local snippets, success = SnipMate.load_snippets(snippetfile)
   if not success then
-    vis:info('Failed to load a correct SnipMate: ' .. snippetfile)
+    vis:message('Failed to load a correct SnipMate: ' .. snippetfile)
+  end
+  return snippets, success
+end
+
+
+local function load_generalized(filemaps, modulefile, snippetsmodule, snippetstypestr)
+  local snippetfilename = vis.win.syntax
+  if filemaps[snippetfilename] ~= nil then
+    snippetfilename = filemaps[snippetfilename]
+  end
+
+  local snippetfile = modulefile .. snippetfilename .. '.snippets'
+  local snippets, success = snippetsmodule.load_snippets(snippetfile)
+
+  if not success then
+    vis:message('Failed to load a correct ' .. snippetstypestr .. ': ' .. snippetfile)
   end
   return snippets, success
 end
@@ -72,12 +103,21 @@ end
 --------------------------------------------------------------------------------
 -- Plugging it all in
 
-vis:map(vis.modes.INSERT, "<C-x><C-j>", function()
-  local snippets = merge_and_override(load_snipmate(), load_ultisnips(), '_us')
+vis:map(vis.modes.INSERT, '<C-x><C-j>', function()
+  --local function load_generalized(filemaps, modulefile, snippetsmodule, snippetstypestr)
+  local snippets = merge_and_override(
+    load_generalized(M.syntaxfilemaps.snipmate,  M.snipmate,  SnipMate , 'SnipMate' ),
+    load_generalized(M.syntaxfilemaps.ultisnips, M.ultisnips, UltiSnips, 'UltiSnips'),
+    '_us')
+  
+  -- local snippets = merge_and_override(
+    -- load_snipmate(),
+    -- load_ultisnips(),
+    -- '_us')
 
-  local win = vis.win
+  local win  = vis.win
   local file = win.file
-  local pos = win.selection.pos
+  local pos  = win.selection.pos
 
   if not pos then
     return
@@ -105,7 +145,7 @@ vis:map(vis.modes.INSERT, "<C-x><C-j>", function()
     return
   end
 
-  local trigger = chosen:gmatch('[^ ]+')()
+  local trigger     = chosen:gmatch('[^ ]+')()
   local snipcontent = snippets[trigger].content
   if range then
     file:delete(range)
