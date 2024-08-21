@@ -11,8 +11,8 @@ local lpeg = require('lpeg')
 -- lpeg rules
 
 -- Base definitions
-local tws                = lpeg.S' ' ^ 1
-local tnewline           = lpeg.S'\n'
+local tws                = lpeg.P' ' ^ 1
+local tnewline           = lpeg.P'\n'
 local tlowcasedword      = lpeg.R'az' ^ 1
 local tdigit             = lpeg.locale()['digit']
 local talphanum          = lpeg.locale()['alnum']
@@ -23,18 +23,18 @@ local ttag               = lpeg.Cg(lpeg.Cp(), 'selstart')
                            * lpeg.P'${'
                            * lpeg.Cg(tdigit^1, 'tag-order') 
                            * (
-                               lpeg.S'}'
-                               + ( lpeg.S':'
+                               lpeg.P'}'
+                               + ( lpeg.P':'
                                  -- Match either reference (since that's
                                  -- what \$[0-9] are) or default value
-                                 * ( lpeg.Cg(lpeg.S'$' * tdigit, 'reference-value')
-                                   + lpeg.Cg(talphanum^1, 'default-value') 
+                                 * ((lpeg.P'$' * lpeg.Cg(tdigit, 'reference-value'))
+                                   + lpeg.Cg((talphanum + lpeg.P'.')^1, 'default-value') 
                                    )
-                                 * lpeg.S'}'
+                                 * lpeg.P'}'
                                  )
                              )
                            * lpeg.Cg(lpeg.Cp(), 'selend')
-local tsnippetdecl       = lpeg.P'snippet' * lpeg.S' ' * lpeg.Cg(ttabtrigger, 'tabtrigger') * tnewline
+local tsnippetdecl       = lpeg.P'snippet' * lpeg.P' ' * lpeg.Cg(ttabtrigger, 'tabtrigger') * tnewline
 local tsnippetcontent    = lpeg.C(
                              lpeg.Cp() *
                              (lpeg.S'\t '^1 
@@ -45,7 +45,7 @@ local tsnippetcontent    = lpeg.C(
 
 -- Constructs
 local tsnippet = tsnippetdecl * tsnippetcontent
-local tcomment = lpeg.S'#' * tanyprintable^0 * tnewline
+local tcomment = lpeg.P'#' * tanyprintable^0 * tnewline
 
 -- The way grammar captures:
 -- Every snippet gets its own table, and every table has:

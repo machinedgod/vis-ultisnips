@@ -11,9 +11,13 @@ local UltiSnips = require(cwd .. '.ultisnips-parser')
 --------------------------------------------------------------------------------
 -- Config
 
-M.snipmate       = ''
-M.ultisnips      = ''
-M.syntaxfilemaps =
+M.snipmate        = ''
+M.ultisnips       = ''
+-- Lets disable UltiSnips for now since they aren't nearly parsed well
+-- enough as SnipMates. Still leave it as an option so that whoever
+-- wants to use them  at their own risk - they can.
+M.enableUltiSnips = false
+M.syntaxfilemaps  =
   { snipmate  = { cpp = "c"
                 }
   , ultisnips = {}
@@ -41,38 +45,7 @@ local function snippetslist(snippets)
 end
 
 
-
-local function load_ultisnips()
-  local snippetFilename = vis.win.syntax
-  if M.syntaxfilemaps.ultisnips[snippetFilename] ~= nil then
-    snippetFilename = M.syntaxfilemaps.ultisnips[snippetFilename]
-  end
-
-  local snippetfile = M.ultisnips .. snippetFilename .. '.snippets'
-  local snippets, success = UltiSnips.load_snippets(snippetfile)
-  if not success then
-    vis:message('Failed to load a correct UltiSnip: ' .. snippetfile)
-  end
-  return snippets, success
-end
-
-
-
-local function load_snipmate()
-  local snippetFilename = vis.win.syntax
-  if M.syntaxfilemaps.snipmate[snippetFilename] ~= nil then
-    snippetFilename = M.syntaxfilemaps.snipmate[snippetFilename]
-  end
-
-  local snippetfile = M.snipmate .. snippetFilename .. '.snippets'
-  local snippets, success = SnipMate.load_snippets(snippetfile)
-  if not success then
-    vis:message('Failed to load a correct SnipMate: ' .. snippetfile)
-  end
-  return snippets, success
-end
-
-
+-- Loads snippet file using either SnipMate or UltiSnips module
 local function load_generalized(filemaps, modulefile, snippetsmodule, snippetstypestr)
   local snippetfilename = vis.win.syntax
   if filemaps[snippetfilename] ~= nil then
@@ -99,9 +72,46 @@ local function merge_and_override(snips1, snips2, suffix)
 end
 
 
-local function create_tag_selection(pos, contentlength, tagindex)
-  local address = '#' .. pos .. ',#' .. pos + contentlength
-  vis:command(address .. ' x/\\$\\{' .. tagindex .. '[^}]*\\}/')
+-- From testing with vis:
+-- :7 x/\$\{(1(:[^}]+)?|[0-9]+:\$1)\}/
+local function create_tag_selection_with_refs(pos, contentlength, tagindex)
+  local address   = '#' .. pos .. ',#' .. pos + contentlength
+  -- Has to match either just pure tag or with default value
+  -- no need to capture the default value here
+  local mainregex = tagindex .. '(:[^}]+)?'
+  -- Don't care about the other tag index here, just need to find
+  -- the same reference
+  local refregex  = '[0-9]+:\\$' .. tagindex
+  vis:command(address
+             .. ' x/\\$\\{('
+             .. mainregex
+             .. '|'
+             .. refregex
+             .. ')\\}/'
+             )
+end
+
+
+-- :g/\$\{[0-9]+:([^}]+)\}/ c/Default value/
+local function replace_tag_with_default_value(defaultval)
+  -- Has to match either just pure tag or with default value
+  -- no need to capture the default value here
+  local gregex    = '\\$\\{[0-9]+:([^}]+)\\}'
+  local changecmd = 'c/' .. defaultval .. '/'
+  vis:command('g/' 
+             .. gregex 
+             .. '/' 
+             .. changecmd
+             )
+end
+
+
+local function replace_selections_with_default_values_or_empty(defaultval)
+  if defaultval ~= nil then
+    replace_tag_with_default_value(defaultval)
+  else
+    vis:command('c/ /')
+  end
 end
 
 
@@ -109,16 +119,15 @@ end
 -- Plugging it all in
 
 vis:map(vis.modes.INSERT, '<C-x><C-j>', function()
-  --local function load_generalized(filemaps, modulefile, snippetsmodule, snippetstypestr)
-  local snippets = merge_and_override(
-    load_generalized(M.syntaxfilemaps.snipmate,  M.snipmate,  SnipMate , 'SnipMate' ),
-    load_generalized(M.syntaxfilemaps.ultisnips, M.ultisnips, UltiSnips, 'UltiSnips'),
-    '_us')
-  
-  -- local snippets = merge_and_override(
-    -- load_snipmate(),
-    -- load_ultisnips(),
-    -- '_us')
+  local snippets = {}
+  if M.enableUltiSnips then
+    snippets = merge_and_override(
+      load_generalized(M.syntaxfilemaps.snipmate,  M.snipmate,  SnipMate , 'SnipMate' ),
+      load_generalized(M.syntaxfilemaps.ultisnips, M.ultisnips, UltiSnips, 'UltiSnips'),
+      '_UltiSnip')
+  else
+    snippets = load_generalized(M.syntaxfilemaps.snipmate,  M.snipmate,  SnipMate , 'SnipMate' )
+  end
 
   local win  = vis.win
   local file = win.file
@@ -172,7 +181,24 @@ vis:map(vis.modes.INSERT, '<C-x><C-j>', function()
     -- Because tag 0 seems to be main tag in snippets, we want to leave
     -- it last, therefore we start from 1 and count to tags - 1, then
     -- later manually add 0th tag
-    for i = 1, #snipcontent.tags - 1, 1 do
+    --
+    -- Wed Aug 21 05:15:23 AM MDT 2024
+    -- It seems that the whole shennangian with 0th tag being first is not
+    -- really a thing and its messing up snippets that don't work this way
+    -- (like C snippets). What should REALLY happen is that I sort the tags
+    -- somehow, but for now, I'm just gonna ignore this convention
+    --
+    -- Wed Aug 21 05:26:00 AM MDT 2024
+    -- Welp, this is now an issue :(
+    -- It seems this makes C.snippet tags work very nice (with occassional
+    -- parsing bugs), but its messing up haskell snippets now
+    -- I need to rethink this whole strategy with ordering
+    --
+    -- Meanwhile, its likely that C will be used more than haskell so,
+    -- I'll leave it this way for now
+    local selectionrollbackcounter = 0
+    --for i = 1, #snipcontent.tags - 1, 1 do
+    for i = 1, #snipcontent.tags, 1 do
       -- Can't use 'x' command because it'd select stuff across
       -- whole file
       --vis:command('#' .. pos + v.selstart ..',#' .. pos + v.selend .. ' p')
@@ -181,17 +207,27 @@ vis:map(vis.modes.INSERT, '<C-x><C-j>', function()
       -- Yes, but if I limit the 'x' only within the inserted snippet
       -- scope, it'd work?
       -- After trying: yep, it works
-      create_tag_selection(pos, snipcontentlen, i)
+
+      -- Skip reference tags, they'll be picked up by main tag
+      if snipcontent.tags[i].reference == nil then
+        create_tag_selection_with_refs(pos, snipcontentlen, i)
+        replace_selections_with_default_values_or_empty(snipcontent.tags[i].default)
+        selectionrollbackcounter = selectionrollbackcounter + 1
+      end
     end
 
     -- Manually add zero here without meddling with the loop up there
-    create_tag_selection(pos, snipcontentlen, 0)
+    -- Wed Aug 21 05:17:23 AM MDT 2024
+    -- Nah, see comment upstairs with same date
+    --create_tag_selection_with_refs(pos, snipcontentlen, 0)
+    --replace_selections_with_default_values_or_empty(snipcontent.tags[#snipcontent.tags].default)
 
     -- Backtrack through all selections we've made first
     -- (so that we can use g> to move us forward)...
-    for i = 1, #snipcontent.tags - 1, 1 do
+    for i = 1, selectionrollbackcounter -1, 1 do
       vis:feedkeys('g<')
     end
+
       
   else
     win.selection.pos = pos + #snipcontent.str
